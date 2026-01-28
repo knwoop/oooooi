@@ -42,10 +42,11 @@ var statusCmd = &cobra.Command{
 
 		until := time.Until(event.StartTime)
 		fmt.Printf("Next meeting:\n")
-		fmt.Printf("  Title: %s\n", event.Title)
-		fmt.Printf("  Start: %s\n", event.StartTime.Format("2006-01-02 15:04"))
-		fmt.Printf("  In:    %s\n", formatDuration(until))
-		fmt.Printf("  Meet:  %s\n", event.MeetLink)
+		fmt.Printf("  Title:  %s\n", event.Title)
+		fmt.Printf("  Start:  %s\n", event.StartTime.Format("2006-01-02 15:04"))
+		fmt.Printf("  In:     %s\n", formatDuration(until))
+		fmt.Printf("  Status: %s\n", event.ResponseStatus)
+		fmt.Printf("  Meet:   %s\n", event.MeetLink)
 	},
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -13,11 +14,20 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Response status priority (lower = higher priority)
+var responseStatusPriority = map[string]int{
+	"accepted":    0,
+	"tentative":   1,
+	"needsAction": 2,
+	"declined":    3,
+}
+
 type Event struct {
-	ID        string
-	Title     string
-	StartTime time.Time
-	MeetLink  string
+	ID             string
+	Title          string
+	StartTime      time.Time
+	MeetLink       string
+	ResponseStatus string // accepted, tentative, needsAction, declined
 }
 
 type Client struct {
@@ -79,20 +89,52 @@ func (c *Client) GetUpcomingEvents(ctx context.Context, duration time.Duration) 
 			continue
 		}
 
+		// Skip declined events
+		responseStatus := getResponseStatus(item)
+		if responseStatus == "declined" {
+			continue
+		}
+
 		startTime, err := parseEventTime(item.Start)
 		if err != nil {
 			continue
 		}
 
 		result = append(result, Event{
-			ID:        item.Id,
-			Title:     item.Summary,
-			StartTime: startTime,
-			MeetLink:  item.HangoutLink,
+			ID:             item.Id,
+			Title:          item.Summary,
+			StartTime:      startTime,
+			MeetLink:       item.HangoutLink,
+			ResponseStatus: responseStatus,
 		})
 	}
 
+	// Sort by start time, then by response status priority
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].StartTime.Equal(result[j].StartTime) {
+			return responseStatusPriority[result[i].ResponseStatus] < responseStatusPriority[result[j].ResponseStatus]
+		}
+		return result[i].StartTime.Before(result[j].StartTime)
+	})
+
 	return result, nil
+}
+
+func getResponseStatus(event *calendar.Event) string {
+	// Check if self is the organizer
+	if event.Organizer != nil && event.Organizer.Self {
+		return "accepted"
+	}
+
+	// Find self in attendees
+	for _, attendee := range event.Attendees {
+		if attendee.Self {
+			return attendee.ResponseStatus
+		}
+	}
+
+	// Default to needsAction if not found
+	return "needsAction"
 }
 
 func (c *Client) GetNextMeetEvent(ctx context.Context) (*Event, error) {
