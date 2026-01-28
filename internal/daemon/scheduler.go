@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	checkInterval   = 1 * time.Minute
+	checkInterval   = 20 * time.Second
 	notifyBefore    = 1 * time.Minute
 	lookAheadWindow = 5 * time.Minute
 )
