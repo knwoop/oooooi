@@ -16,25 +16,22 @@ const (
 
 func ShowMeetingAlert(title string) (AlertResult, error) {
 	script := fmt.Sprintf(`
-display dialog "MTG開始！\n%s" with title "ooi" buttons {"あとで", "参加"} default button "参加" with icon caution
+display dialog "Meeting starting!\n%s" with title "ooi" buttons {"Join"} default button "Join" with icon caution
 `, escapeAppleScript(title))
 
 	cmd := exec.Command("osascript", "-e", script)
-	output, err := cmd.Output()
+	_, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if exitErr.ExitCode() == 1 {
+				// User closed dialog without clicking button
 				return AlertResultLater, nil
 			}
 		}
 		return AlertResultError, fmt.Errorf("failed to show alert: %w", err)
 	}
 
-	result := strings.TrimSpace(string(output))
-	if strings.Contains(result, "参加") {
-		return AlertResultJoin, nil
-	}
-	return AlertResultLater, nil
+	return AlertResultJoin, nil
 }
 
 func OpenMeetLink(url string) error {
