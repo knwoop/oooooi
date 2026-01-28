@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/knwoop/ooi/internal/calendar"
@@ -11,48 +12,68 @@ import (
 )
 
 const (
-	checkInterval   = 20 * time.Second
+	fetchInterval   = 3 * time.Minute
+	alertInterval   = 1 * time.Second
 	notifyBefore    = 1 * time.Minute
 	lookAheadWindow = 5 * time.Minute
 )
 
 type Scheduler struct {
-	client        *calendar.Client
+	client         *calendar.Client
+	cachedEvents   []calendar.Event
+	cacheMu        sync.RWMutex
 	notifiedEvents map[string]bool
 }
 
 func NewScheduler(client *calendar.Client) *Scheduler {
 	return &Scheduler{
-		client:        client,
+		client:         client,
 		notifiedEvents: make(map[string]bool),
 	}
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
-	log.Println("Scheduler started, checking every minute...")
+	log.Printf("Scheduler started (fetch: %v, alert check: %v)", fetchInterval, alertInterval)
 
-	s.check(ctx)
+	// Initial fetch
+	s.fetchEvents(ctx)
 
-	ticker := time.NewTicker(checkInterval)
-	defer ticker.Stop()
+	fetchTicker := time.NewTicker(fetchInterval)
+	alertTicker := time.NewTicker(alertInterval)
+	defer fetchTicker.Stop()
+	defer alertTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("Scheduler stopped")
 			return ctx.Err()
-		case <-ticker.C:
-			s.check(ctx)
+		case <-fetchTicker.C:
+			s.fetchEvents(ctx)
+		case <-alertTicker.C:
+			s.checkAlerts()
 		}
 	}
 }
 
-func (s *Scheduler) check(ctx context.Context) {
+func (s *Scheduler) fetchEvents(ctx context.Context) {
 	events, err := s.client.GetUpcomingEvents(ctx, lookAheadWindow)
 	if err != nil {
 		log.Printf("Failed to fetch events: %v", err)
 		return
 	}
+
+	s.cacheMu.Lock()
+	s.cachedEvents = events
+	s.cacheMu.Unlock()
+
+	log.Printf("Fetched %d events", len(events))
+}
+
+func (s *Scheduler) checkAlerts() {
+	s.cacheMu.RLock()
+	events := s.cachedEvents
+	s.cacheMu.RUnlock()
 
 	now := time.Now()
 
@@ -92,8 +113,6 @@ func (s *Scheduler) notify(event calendar.Event) {
 }
 
 func (s *Scheduler) cleanupOldEvents() {
-	// Keep notified events map small by clearing periodically
-	// Events are tracked by ID, so stale entries don't cause issues
 	if len(s.notifiedEvents) > 100 {
 		s.notifiedEvents = make(map[string]bool)
 	}
