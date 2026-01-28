@@ -4,7 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/knwoop/ooi/internal/calendar"
@@ -35,8 +40,18 @@ func NewScheduler(client *calendar.Client) *Scheduler {
 func (s *Scheduler) Run(ctx context.Context) error {
 	log.Printf("Scheduler started (fetch: %v, alert check: %v)", fetchInterval, alertInterval)
 
+	// Write PID file
+	if err := writePIDFile(); err != nil {
+		log.Printf("Warning: failed to write PID file: %v", err)
+	}
+	defer removePIDFile()
+
 	// Initial fetch
 	s.fetchEvents(ctx)
+
+	// Listen for SIGUSR1 to trigger immediate fetch
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGUSR1)
 
 	fetchTicker := time.NewTicker(fetchInterval)
 	alertTicker := time.NewTicker(alertInterval)
@@ -48,6 +63,9 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			log.Println("Scheduler stopped")
 			return ctx.Err()
+		case <-sigCh:
+			log.Println("Received SIGUSR1, syncing...")
+			s.fetchEvents(ctx)
 		case <-fetchTicker.C:
 			s.fetchEvents(ctx)
 		case <-alertTicker.C:
@@ -116,6 +134,43 @@ func (s *Scheduler) cleanupOldEvents() {
 	if len(s.notifiedEvents) > 100 {
 		s.notifiedEvents = make(map[string]bool)
 	}
+}
+
+func PIDFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "ooi", "ooi.pid"), nil
+}
+
+func writePIDFile() error {
+	path, err := PIDFilePath()
+	if err != nil {
+		return err
+	}
+	pid := os.Getpid()
+	return os.WriteFile(path, []byte(strconv.Itoa(pid)), 0644)
+}
+
+func removePIDFile() {
+	path, err := PIDFilePath()
+	if err != nil {
+		return
+	}
+	os.Remove(path)
+}
+
+func ReadPID() (int, error) {
+	path, err := PIDFilePath()
+	if err != nil {
+		return 0, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(string(data))
 }
 
 func Start(ctx context.Context) error {
