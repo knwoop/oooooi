@@ -69,11 +69,16 @@ func NewClient(ctx context.Context, token *oauth2.Token) (*Client, error) {
 }
 
 func (c *Client) GetUpcomingEvents(ctx context.Context, duration time.Duration) ([]Event, error) {
+	return c.GetEventsInRange(ctx, 0, duration)
+}
+
+func (c *Client) GetEventsInRange(ctx context.Context, lookback, lookahead time.Duration) ([]Event, error) {
 	now := time.Now()
-	end := now.Add(duration)
+	start := now.Add(-lookback)
+	end := now.Add(lookahead)
 
 	events, err := c.service.Events.List("primary").
-		TimeMin(now.Format(time.RFC3339)).
+		TimeMin(start.Format(time.RFC3339)).
 		TimeMax(end.Format(time.RFC3339)).
 		SingleEvents(true).
 		OrderBy("startTime").
