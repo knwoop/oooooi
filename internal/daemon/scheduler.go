@@ -23,17 +23,22 @@ const (
 	lookAheadWindow = 5 * time.Minute
 )
 
+type eventKey struct {
+	eventID   string
+	startTime time.Time
+}
+
 type Scheduler struct {
 	client         *calendar.Client
 	cachedEvents   []calendar.Event
 	cacheMu        sync.RWMutex
-	notifiedEvents map[string]bool
+	notifiedEvents map[eventKey]bool
 }
 
 func NewScheduler(client *calendar.Client) *Scheduler {
 	return &Scheduler{
 		client:         client,
-		notifiedEvents: make(map[string]bool),
+		notifiedEvents: make(map[eventKey]bool),
 	}
 }
 
@@ -96,7 +101,12 @@ func (s *Scheduler) checkAlerts() {
 	now := time.Now()
 
 	for _, event := range events {
-		if s.notifiedEvents[event.ID] {
+		key := eventKey{
+			eventID:   event.ID,
+			startTime: event.StartTime,
+		}
+
+		if s.notifiedEvents[key] {
 			continue
 		}
 
@@ -104,7 +114,7 @@ func (s *Scheduler) checkAlerts() {
 
 		if timeUntil <= notifyBefore && timeUntil > -notifyBefore {
 			s.notify(event)
-			s.notifiedEvents[event.ID] = true
+			s.notifiedEvents[key] = true
 		}
 	}
 
@@ -132,7 +142,7 @@ func (s *Scheduler) notify(event calendar.Event) {
 
 func (s *Scheduler) cleanupOldEvents() {
 	if len(s.notifiedEvents) > 100 {
-		s.notifiedEvents = make(map[string]bool)
+		s.notifiedEvents = make(map[eventKey]bool)
 	}
 }
 
