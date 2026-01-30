@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/knwoop/ooi/internal/daemon"
@@ -13,9 +14,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "ooi",
-	Short: "Meeting reminder CLI tool",
-	Long:  "ooi is a macOS CLI tool that automatically opens Google Meet 1 minute before meetings.",
+	Use:     "ooi",
+	Short:   "Meeting reminder CLI tool",
+	Long:    "ooi is a macOS CLI tool that automatically opens Google Meet 1 minute before meetings.",
+	Version: getVersion(),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -44,4 +46,35 @@ func Execute() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func getVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+
+	var revision, modified string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value
+		}
+	}
+
+	if revision != "" {
+		v := revision[:7]
+		if modified == "true" {
+			v += "-dirty"
+		}
+		return v
+	}
+
+	return "dev"
 }
