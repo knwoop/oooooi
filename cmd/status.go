@@ -10,10 +10,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	statusLookBack  = 2 * time.Hour
+	statusLookAhead = 3 * time.Hour
+)
+
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show next upcoming meeting",
-	Long:  "Display the next scheduled meeting with Google Meet link.",
+	Short: "Show upcoming meetings",
+	Long:  "Display upcoming meetings with Google Meet links.",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
 
@@ -29,37 +34,82 @@ var statusCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		event, err := client.GetNextMeetEvent(ctx)
+		events, err := client.GetEventsInRange(ctx, statusLookBack, statusLookAhead)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to fetch events: %v\n", err)
 			os.Exit(1)
 		}
 
-		if event == nil {
+		if len(events) == 0 {
 			fmt.Println("No upcoming meetings with Google Meet.")
 			return
 		}
 
-		until := time.Until(event.StartTime)
-		fmt.Printf("Next meeting:\n")
-		fmt.Printf("  Title:  %s\n", event.Title)
-		fmt.Printf("  Start:  %s\n", event.StartTime.Format("2006-01-02 15:04"))
-		fmt.Printf("  In:     %s\n", formatDuration(until))
-		fmt.Printf("  Status: %s\n", event.ResponseStatus)
-		fmt.Printf("  Meet:   %s\n", event.MeetLink)
+		now := time.Now()
+
+		// Find ongoing and next meetings
+		var ongoingEvent *calendar.Event
+		var nextEvent *calendar.Event
+
+		for i := range events {
+			if events[i].StartTime.Before(now) || events[i].StartTime.Equal(now) {
+				// Meeting has started (ongoing)
+				if ongoingEvent == nil {
+					ongoingEvent = &events[i]
+				}
+			} else {
+				// Meeting hasn't started yet (upcoming)
+				if nextEvent == nil {
+					nextEvent = &events[i]
+				}
+			}
+			// Stop once we have both
+			if ongoingEvent != nil && nextEvent != nil {
+				break
+			}
+		}
+
+		if ongoingEvent == nil && nextEvent == nil {
+			fmt.Println("No upcoming meetings with Google Meet.")
+			return
+		}
+
+		if ongoingEvent != nil {
+			printMeeting("Ongoing meeting", ongoingEvent, "[ongoing]")
+		}
+
+		if nextEvent != nil {
+			if ongoingEvent != nil {
+				fmt.Println()
+			}
+			printMeeting("Next meeting", nextEvent, formatEventStatus(nextEvent.StartTime, now))
+		}
 	},
 }
 
-func formatDuration(d time.Duration) string {
-	if d < 0 {
-		return "now"
+func printMeeting(label string, event *calendar.Event, timeStatus string) {
+	const tmpl = `%s:
+  Title:  %s
+  Time:   %s %s
+  Status: %s
+  Meet:   %s`
+	fmt.Printf(tmpl+"\n", label, event.Title, event.StartTime.Format("15:04"), timeStatus, event.ResponseStatus, event.MeetLink)
+}
+
+func formatEventStatus(startTime, now time.Time) string {
+	until := startTime.Sub(now)
+
+	if until < 0 {
+		return "[ongoing]"
 	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
+
+	h := int(until.Hours())
+	m := int(until.Minutes()) % 60
+
 	if h > 0 {
-		return fmt.Sprintf("%dh %dm", h, m)
+		return fmt.Sprintf("[in %dh %dm]", h, m)
 	}
-	return fmt.Sprintf("%dm", m)
+	return fmt.Sprintf("[in %dm]", m)
 }
 
 func init() {
