@@ -49,21 +49,23 @@ display dialog "Meeting starting!\n%s" with title "ooi" buttons {"Join"} default
 }
 
 func showMultipleMeetingsAlert(meetings []Meeting) (AlertResult, error) {
-	// Build list of meeting titles
-	var titles []string
-	for _, m := range meetings {
-		titles = append(titles, escapeAppleScript(m.Title))
+	// AppleScript buttons are limited to 3, use first 3 meetings
+	maxButtons := 3
+	if len(meetings) < maxButtons {
+		maxButtons = len(meetings)
+	}
+
+	// Build button list (AppleScript shows buttons right-to-left, so reverse order)
+	var buttons []string
+	for i := maxButtons - 1; i >= 0; i-- {
+		buttons = append(buttons, fmt.Sprintf("\"%s\"", escapeAppleScript(meetings[i].Title)))
 	}
 
 	script := fmt.Sprintf(`
-set meetingList to {"%s"}
-set selectedMeeting to choose from list meetingList with title "ooi" with prompt "Multiple meetings starting! Select one to join:" default items {item 1 of meetingList}
-if selectedMeeting is false then
-	return "CANCELLED"
-else
-	return item 1 of selectedMeeting
-end if
-`, strings.Join(titles, "\", \""))
+display dialog "Meeting starting!" with title "ooi" buttons {%s} default button 1 with icon caution
+set selectedButton to button returned of result
+return selectedButton
+`, strings.Join(buttons, ", "))
 
 	cmd := exec.Command("osascript", "-e", script)
 	output, err := cmd.Output()
@@ -77,9 +79,6 @@ end if
 	}
 
 	selected := strings.TrimSpace(string(output))
-	if selected == "CANCELLED" {
-		return AlertResult{Joined: false, Index: -1}, nil
-	}
 
 	// Find the index of the selected meeting
 	for i, m := range meetings {
