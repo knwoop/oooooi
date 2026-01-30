@@ -100,6 +100,8 @@ func (s *Scheduler) checkAlerts() {
 
 	now := time.Now()
 
+	// Collect all events that need notification
+	var eventsToNotify []calendar.Event
 	for _, event := range events {
 		key := eventKey{
 			eventID:   event.ID,
@@ -113,7 +115,18 @@ func (s *Scheduler) checkAlerts() {
 		timeUntil := event.StartTime.Sub(now)
 
 		if timeUntil <= notifyBefore && timeUntil > -notifyBefore {
-			s.notify(event)
+			eventsToNotify = append(eventsToNotify, event)
+		}
+	}
+
+	if len(eventsToNotify) > 0 {
+		s.notifyMultiple(eventsToNotify)
+		// Mark all as notified
+		for _, event := range eventsToNotify {
+			key := eventKey{
+				eventID:   event.ID,
+				startTime: event.StartTime,
+			}
 			s.notifiedEvents[key] = true
 		}
 	}
@@ -121,22 +134,34 @@ func (s *Scheduler) checkAlerts() {
 	s.cleanupOldEvents()
 }
 
-func (s *Scheduler) notify(event calendar.Event) {
-	log.Printf("Notifying: %s (starts at %s)", event.Title, event.StartTime.Format("15:04"))
+func (s *Scheduler) notifyMultiple(events []calendar.Event) {
+	for _, event := range events {
+		log.Printf("Notifying: %s (starts at %s)", event.Title, event.StartTime.Format("15:04"))
+	}
 
-	result, err := notifier.ShowMeetingAlert(event.Title)
+	// Convert to notifier.Meeting slice
+	meetings := make([]notifier.Meeting, len(events))
+	for i, event := range events {
+		meetings[i] = notifier.Meeting{
+			Title:    event.Title,
+			MeetLink: event.MeetLink,
+		}
+	}
+
+	result, err := notifier.ShowMeetingAlert(meetings)
 	if err != nil {
 		log.Printf("Failed to show alert: %v", err)
 		return
 	}
 
-	if result == notifier.AlertResultJoin {
-		log.Printf("Opening Meet: %s", event.MeetLink)
-		if err := notifier.OpenMeetLink(event.MeetLink); err != nil {
+	if result.Joined && result.Index >= 0 && result.Index < len(events) {
+		selectedEvent := events[result.Index]
+		log.Printf("Opening Meet: %s", selectedEvent.MeetLink)
+		if err := notifier.OpenMeetLink(selectedEvent.MeetLink); err != nil {
 			log.Printf("Failed to open Meet link: %v", err)
 		}
 	} else {
-		log.Printf("User chose 'Later' for: %s", event.Title)
+		log.Printf("User cancelled or closed the dialog")
 	}
 }
 
