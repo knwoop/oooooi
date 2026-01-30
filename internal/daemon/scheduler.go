@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	fetchInterval   = 3 * time.Minute
-	alertInterval   = 1 * time.Second
-	notifyBefore    = 1 * time.Minute
-	lookAheadWindow = 5 * time.Minute
+	fetchInterval    = 3 * time.Minute
+	alertInterval    = 1 * time.Second
+	notifyBefore     = 1 * time.Minute
+	lookAheadWindow  = 5 * time.Minute
+	missedLookback   = 1 * time.Hour // Look back for missed meetings
 )
 
 type eventKey struct {
@@ -83,7 +84,8 @@ func (s *Scheduler) Run(ctx context.Context) error {
 }
 
 func (s *Scheduler) fetchEvents(ctx context.Context) {
-	events, err := s.client.GetUpcomingEvents(ctx, lookAheadWindow)
+	// Fetch events from past (for missed meetings) to future
+	events, err := s.client.GetEventsInRange(ctx, missedLookback, lookAheadWindow)
 	if err != nil {
 		log.Printf("Failed to fetch events: %v", err)
 		if isAuthError(err) && !s.authErrorShown {
@@ -135,7 +137,10 @@ func (s *Scheduler) checkAlerts() {
 
 		timeUntil := event.StartTime.Sub(now)
 
-		if timeUntil <= notifyBefore && timeUntil > -notifyBefore {
+		// Notify if:
+		// 1. Meeting starts within notifyBefore (upcoming)
+		// 2. Meeting started within missedLookback but wasn't notified (missed)
+		if timeUntil <= notifyBefore && timeUntil > -missedLookback {
 			eventsToNotify = append(eventsToNotify, event)
 		}
 	}
