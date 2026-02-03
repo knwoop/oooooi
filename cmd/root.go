@@ -9,7 +9,9 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/knwoop/ooi/internal/calendar"
 	"github.com/knwoop/ooi/internal/daemon"
+	"github.com/knwoop/ooi/internal/menubar"
 	"github.com/spf13/cobra"
 )
 
@@ -32,12 +34,32 @@ var rootCmd = &cobra.Command{
 		}()
 
 		log.Println("Starting ooi daemon...")
-		if err := daemon.Start(ctx); err != nil {
-			if err != context.Canceled {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
+
+		token, err := calendar.LoadToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Not authenticated. Run 'ooi auth' first.\n")
+			os.Exit(1)
 		}
+
+		client, err := calendar.NewClient(ctx, token)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create calendar client: %v\n", err)
+			os.Exit(1)
+		}
+
+		scheduler := daemon.NewScheduler(client)
+
+		// Run scheduler in background
+		go func() {
+			if err := scheduler.Run(ctx); err != nil {
+				if err != context.Canceled {
+					log.Printf("Scheduler error: %v", err)
+				}
+			}
+		}()
+
+		// Run systray on main thread (required by systray library)
+		menubar.Run(ctx, scheduler)
 	},
 }
 

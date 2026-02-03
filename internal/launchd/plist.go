@@ -24,6 +24,8 @@ const (
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
     <key>StandardOutPath</key>
     <string>/tmp/ooi.log</string>
     <key>StandardErrorPath</key>
@@ -46,7 +48,7 @@ func PlistPath() (string, error) {
 	return filepath.Join(home, "Library", "LaunchAgents", Label+".plist"), nil
 }
 
-func Install() error {
+func WritePlist() error {
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -63,7 +65,7 @@ func Install() error {
 	}
 
 	launchAgentsDir := filepath.Dir(plistPath)
-	if err := os.MkdirAll(launchAgentsDir, 0755); err != nil {
+	if err := os.MkdirAll(launchAgentsDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create LaunchAgents directory: %w", err)
 	}
 
@@ -85,6 +87,19 @@ func Install() error {
 
 	if err := tmpl.Execute(f, data); err != nil {
 		return fmt.Errorf("failed to write plist: %w", err)
+	}
+
+	return nil
+}
+
+func Install() error {
+	if err := WritePlist(); err != nil {
+		return err
+	}
+
+	plistPath, err := PlistPath()
+	if err != nil {
+		return err
 	}
 
 	cmd := exec.Command("launchctl", "load", plistPath)

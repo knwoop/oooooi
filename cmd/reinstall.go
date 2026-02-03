@@ -36,6 +36,13 @@ var reinstallCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Regenerate plist
+		fmt.Println("Updating plist...")
+		if err := launchd.WritePlist(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to update plist: %v\n", err)
+			os.Exit(1)
+		}
+
 		// Restart service
 		fmt.Println("Restarting service...")
 		uid := os.Getuid()

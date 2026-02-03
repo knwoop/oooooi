@@ -19,11 +19,10 @@ import (
 )
 
 const (
-	fetchInterval    = 3 * time.Minute
-	alertInterval    = 1 * time.Second
-	notifyBefore     = 1 * time.Minute
-	lookAheadWindow  = 5 * time.Minute
-	missedLookback   = 1 * time.Hour // Look back for missed meetings
+	fetchInterval  = 3 * time.Minute
+	alertInterval  = 1 * time.Second
+	notifyBefore   = 1 * time.Minute
+	missedLookback = 1 * time.Hour // Look back for missed meetings
 )
 
 type eventKey struct {
@@ -32,11 +31,11 @@ type eventKey struct {
 }
 
 type Scheduler struct {
-	client          *calendar.Client
-	cachedEvents    []calendar.Event
-	cacheMu         sync.RWMutex
-	notifiedEvents  map[eventKey]bool
-	authErrorShown  bool
+	client         *calendar.Client
+	cachedEvents   []calendar.Event
+	cacheMu        sync.RWMutex
+	notifiedEvents map[eventKey]bool
+	authErrorShown bool
 }
 
 func NewScheduler(client *calendar.Client) *Scheduler {
@@ -84,8 +83,14 @@ func (s *Scheduler) Run(ctx context.Context) error {
 }
 
 func (s *Scheduler) fetchEvents(ctx context.Context) {
-	// Fetch events from past (for missed meetings) to future
-	events, err := s.client.GetEventsInRange(ctx, missedLookback, lookAheadWindow)
+	// Fetch events from past (for missed meetings) to end of today
+	now := time.Now()
+	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	lookAhead := endOfDay.Sub(now)
+	if lookAhead < time.Minute {
+		lookAhead = time.Minute
+	}
+	events, err := s.client.GetEventsInRange(ctx, missedLookback, lookAhead)
 	if err != nil {
 		log.Printf("Failed to fetch events: %v", err)
 		if isAuthError(err) && !s.authErrorShown {
@@ -197,6 +202,40 @@ func (s *Scheduler) cleanupOldEvents() {
 	}
 }
 
+func (s *Scheduler) GetOngoingEvent() *calendar.Event {
+	s.cacheMu.RLock()
+	events := s.cachedEvents
+	s.cacheMu.RUnlock()
+
+	now := time.Now()
+	for i := range events {
+		started := events[i].StartTime.Compare(now) <= 0
+		ended := events[i].EndTime.Compare(now) <= 0
+		if started && !ended {
+			return &events[i]
+		}
+	}
+	return nil
+}
+
+func (s *Scheduler) GetNextEvent() *calendar.Event {
+	s.cacheMu.RLock()
+	events := s.cachedEvents
+	s.cacheMu.RUnlock()
+
+	now := time.Now()
+	for i := range events {
+		if events[i].StartTime.Compare(now) > 0 {
+			return &events[i]
+		}
+	}
+	return nil
+}
+
+func (s *Scheduler) Sync() {
+	s.fetchEvents(context.Background())
+}
+
 func PIDFilePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -211,7 +250,7 @@ func writePIDFile() error {
 		return err
 	}
 	pid := os.Getpid()
-	return os.WriteFile(path, []byte(strconv.Itoa(pid)), 0644)
+	return os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644)
 }
 
 func removePIDFile() {

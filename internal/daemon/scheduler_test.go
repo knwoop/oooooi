@@ -16,7 +16,7 @@ func TestPIDFileWriteAndRead(t *testing.T) {
 	wantPID := os.Getpid()
 
 	// Write PID
-	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(wantPID)), 0644); err != nil {
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(wantPID)), 0o644); err != nil {
 		t.Fatalf("Failed to write PID file: %v", err)
 	}
 
