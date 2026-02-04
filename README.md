@@ -77,9 +77,35 @@ The daemon will now start automatically on login.
 ## How it works
 
 1. Fetches Google Calendar every 3 minutes
-2. Checks for upcoming meetings every second
+2. Displays current/next meeting in the menu bar
 3. Shows a notification dialog 1 minute before meetings with Meet links
 4. Click "Join" to open Meet in your browser
+
+### Menu bar
+
+The menu bar shows your meeting schedule at a glance:
+
+- `🟢 25m Weekly 1on1` - Ongoing meeting (25 minutes remaining)
+- `⏳ 15m Stand-up` - Next meeting (starts in 15 minutes)
+- `📅 No meetings` - No meetings today
+
+Click the menu bar icon to:
+- View meeting details
+- Open Meet link
+- Sync calendar manually
+- Quit the app
+
+### Running manually
+
+If launchd auto-start doesn't work, you can run ooi manually:
+
+```bash
+# Run in background (survives terminal close)
+nohup ooi > /tmp/ooi.log 2> /tmp/ooi.err &
+
+# Or simply
+ooi &
+```
 
 ### Single meeting
 
