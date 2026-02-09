@@ -19,23 +19,6 @@ var reinstallCmd = &cobra.Command{
 			return
 		}
 
-		// Get current executable path
-		execPath, err := os.Executable()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get executable path: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Rebuild binary
-		fmt.Println("Rebuilding binary...")
-		buildCmd := exec.Command("go", "build", "-o", execPath, ".")
-		buildCmd.Stdout = os.Stdout
-		buildCmd.Stderr = os.Stderr
-		if err := buildCmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to rebuild: %v\n", err)
-			os.Exit(1)
-		}
-
 		// Regenerate plist
 		fmt.Println("Updating plist...")
 		if err := launchd.WritePlist(); err != nil {
@@ -52,7 +35,7 @@ var reinstallCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		fmt.Println("Done! Service restarted with new binary.")
+		fmt.Println("Done! Service restarted.")
 	},
 }
 
